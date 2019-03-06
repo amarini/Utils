@@ -12,6 +12,9 @@ Split a ROOT FILE TREE in several files. Useful for access and disposal.
 ###CreateListFromEos.sh
 Used to check if all the files on eos have been processed and which one are missing.
 
+###removePreliminary.sh
+Remove preliminary from a pdf. Locally or on a server with pdftk.
+
 ###Mergefiles.sh
 Used to place in the right position files.
 
