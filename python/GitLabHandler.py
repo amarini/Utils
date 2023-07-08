@@ -7,7 +7,8 @@ import json
 import requests
 
 from datetime import datetime
-import dateutil.parser
+## python < 3.7
+#import dateutil.parser
 
 """
 Original Author: Andrea Carlo Marini
@@ -42,7 +43,7 @@ class MergeReq(Base):
 
     def ParseRequest(self, req):
         Base.ParseRequest(self, req)
-        print("DEBUG: req for MR is", req)
+        #print("DEBUG: req for MR is", req)
         self.sha = req["sha"]
         self.title = req["title"]
         self.labels = req["labels"]
@@ -76,7 +77,7 @@ class Commit(Base):
         Base.ParseRequest(self, req)
         # print "Request is ",req
         self.sha = req["id"]
-        self.date = req["created_at"]
+        self.date = datetime.fromisoformat(req["created_at"])
         self.author = req["author_name"]
         self.title = req["title"]
 
@@ -84,7 +85,7 @@ class Commit(Base):
         for st in req:  ## this is a list  of dict
             status = st["status"]
             name = st["name"]
-            date = st["created_at"]
+            date = datetime.fromisoformat(st["created_at"])
             self.statuses[name] = (status, date)
 
     def Print(self):
@@ -140,9 +141,135 @@ class Pipeline(Base):
             print(self.variables)
         print("-----------------------------")
 
+class Epic(Base):
+    def __init__(self):
+        Base.__init__(self)
+        self.title=""
+        self.id=None
+        self.iid=None
+        self.group=""
+    def ParseRequest(self,req):
+        self.title=req["title"]
+        self.id=req["id"]
+        self.iid=req["iid"]
+        self.group=req["group"]
+    def Print(self):
+        Base.Print(self)
 
-## not implemented yet
-# class Issue(Base):
+        print(" --- EPIC:", self.id, self.iid, "----")
+        print(" title:", self.title)
+        print(" group:",self.group)
+        print(" --------------------------------------")
+
+    def __str__(self):
+        ''' when printing inside other functions, use the title'''
+        return self.title
+
+class MileStone(Base):
+    def __init__(self):
+        Base.__init__(self)
+        self.title=""
+        self.due_date=None
+        self.id=-1
+        self.iid=-1
+        self.created_at = None
+        self.due_date = None
+        self.format= '%Y-%m-%dT%H:%M:%S'
+        self.project_id = None
+
+    def ParseRequest(self,req):
+        self.id = req["id"]
+        self.iid = req["iid"]
+        self.title = req["title"]
+        self.created_at = datetime.fromisoformat(req["created_at"])
+        self.due_date = datetime.fromisoformat(req["due_date"])
+        self.project_id = req["project_id"]
+        # "project_id" : 4,
+        # "state" : "closed",
+        # "description" : "Rerum est voluptatem provident consequuntur molestias similique ipsum dolor.",
+
+    def __str__(self):
+        return self.title
+
+    def Print(self):
+        print(" --- MILESTONE:", self.id, self.iid, "----")
+        print(" title:", self.title)
+        print(" due_date:",self.due_date)
+        print(" --------------------------------------")
+
+class LabelEvent(Base):
+    def __init__(self):
+        self.id=None
+        self.action=None
+        self.user=None
+        self.date = None
+        self.label_id= None
+        self.label = None
+
+    def ParseRequest(self,req):
+        ''' GET /projects/:id/issues/:issue_iid/resource_label_events'''
+        #print ("DEBUG Request label event is ",req)
+        self.id = req['id']
+        self.action = req['action']
+        self.date = datetime.fromisoformat(req["created_at"])
+        self.label_id = req['label']['id']
+        self.label = req['label']['name']
+        self.user = req['user']['name']
+
+    def Print(self):
+        print ("--- LABEL EVENT ---" )
+        print ("label",self.label)
+        print ("action",self.action)
+        print ("date",self.date)
+    
+    def __str__(self):
+        return ("+" if self.action == "add" else '-') + self.label +"("+ str(self.date) + ")"
+
+
+class Issue(Base):
+    def __init__(self):
+        Base.__init__(self)
+        self.title = ""
+        self.labels = []
+        self.iid = -1
+        self.id = -1
+        self.origin_id = ""
+        self.epic= None
+        self.milestone=None
+        self.label_events_filled=False
+        self.label_events=[] ## not necessarily filled
+
+    def ParseRequest(self, req):
+        Base.ParseRequest(self, req)
+        #print("DEBUG: req for ISSUE is", req)
+        self.title = req["title"]
+        self.labels = req["labels"]
+        self.iid = req["iid"]
+        self.id = req["id"]
+        if 'epic' in req:
+            self.epic =Epic()
+            self.epic.ParseRequest(req["epic"])
+        if 'milestone' in req:
+            self.milestone = MileStone()
+            self.milestone.ParseRequest(req["milestone"])
+        return self
+
+    def Print(self):
+        Base.Print(self)
+
+        print(" --- ISSUE:", self.id, self.iid, "----")
+        print(" title:", self.title)
+        print(" labels:", self.labels)
+        print(" epic:", self.epic)
+        print(" milestone:", self.milestone)
+        print(" origin id:", self.origin_id)
+        if self.label_events_filled: print(" label_events:",' '.join( [str(x) for x in self.label_events]) ) 
+        print(" --------------------------------------")
+#with_labels_details    boolean    no    If true, 
+#the response returns more details for each label in labels field: 
+#:name, :color, :description, :description_html, :text_color. Default is false. 
+#The description_html attribute was  not implemented yet
+##
 # class Tag(base)
 
 
@@ -154,14 +281,16 @@ class GitLabHandler:
         self.baseurl = "https://gitlab.cern.ch/api/v4"
         self.auth = ""
         self.per_page = 100
+        self.ca_file = True
         ## in CentOS7 it is not configured correctly. Use True for system.
-        self.ca_file = "/etc/ssl/certs/ca-bundle.crt"
+        #self.ca_file = "/etc/ssl/certs/ca-bundle.crt"
 
     def SetRepo(self, repo):
         """Set the repository. Clear cached"""
         self.repo = re.sub("/", "%2F", repo)
         # self.repoid=None
         self.merge_requests = []
+        self.issues = []
         self.commits = {}  # sha-> Commit
 
     def _check(self):
@@ -515,8 +644,38 @@ class GitLabHandler:
     def GetIssues(self):
         #
         # GET /projects/42/issues/:id
-        raise ValueError("not implemented")
+        """Update the list of open merge requests"""
+        # resource="merge_requests?state=opened"
+        # GET /projects/:id/merge_requests
+        # GET /projects/:id/merge_requests?state=opened
+        # GET /merge_requests?labels=bug,reproduced
+        # GET /merge_requests?milestone=release
+        resource = "issues"
+        params = {"state": "opened","with_labels_details":True}
+        r = self._request(resource, params)
+
+        self.issues = []
+        for req in r.json():
+            myIssue = Issue()
+            myIssue.ParseRequest(req)
+            myIssue.Print()
+            self.issues.append(myIssue)
         return self
+
+    def GetLabelEvents(self, issue=-1):
+        ''' Get Label Events for issues n or all'''
+        #''' GET /projects/:id/issues/:issue_iid/resource_label_events'''
+        for myIssue in self.issues:
+            if issue >= 0 and myIssue.iid != issue: continue
+            resource = f"issues/{myIssue.iid}/resource_label_events"
+            params={}
+            r = self._request(resource,params)
+            myIssue.label_events_filled = True
+            myIssue.label_events=[]
+            for rle in r.json():
+                le = LabelEvent()
+                le.ParseRequest(rle)
+                myIssue.label_events.append(le)
 
     def read_token_fromfile(self, name):
         f = open(name)
@@ -532,32 +691,39 @@ class GitLabHandler:
 if __name__ == "__main__":
     print("Testing ...")
     gitlab = GitLabHandler("amarini/test")
-    gitlab.read_token_fromfile("/afs/cern.ch/user/a/amarini/.ssh/gitlab_token")
+    gitlab.read_token_fromfile(os.environ["HOME"]+ "/.ssh/gitlab_token")
     # gitlab.PrintProject()
     # gitlab.PrintProjects()
+    print ("------------ MERGE REQUESTS ----------------")
     gitlab.GetMergeRequests()
     # iid = gitlab.merge_requests[0].iid
     # gitlab.PostComment(iid, "this is an API test")
-    sha = gitlab.merge_requests[0].sha
-    gitlab.GetCommit(sha)
-    gitlab.commits[sha].Print()
+    if len(gitlab.merge_requests) >0:
+        sha = gitlab.merge_requests[0].sha
+        gitlab.GetCommit(sha)
+        gitlab.commits[sha].Print()
 
-    ## example on work with status
-    # gitlab.SetStatus(sha,"test","failed","https://amarini.web.cern.ch/amarini/cms-private")
-    # gitlab.SetStatus(sha,"test","pending")
-    # gitlab.SetStatus(sha,"test","success","https://amarini.web.cern.ch/amarini/cms-private")
+        ## example on work with status
+        # gitlab.SetStatus(sha,"test","failed","https://amarini.web.cern.ch/amarini/cms-private")
+        # gitlab.SetStatus(sha,"test","pending")
+        # gitlab.SetStatus(sha,"test","success","https://amarini.web.cern.ch/amarini/cms-private")
 
-    gitlab.GetCommit(sha)
-    gitlab.commits[sha].Print()
+        #gitlab.GetCommit(sha)
+        #gitlab.commits[sha].Print()
 
-    # example to work with labels
-    # gitlab.SetLabel(gitlab.merge_requests[0],["new","new2"]) # labels will become this exact list
-    # gitlab.ChangeLabel(gitlab.merge_requests[0],["new"]) # add, remove
-    # gitlab.ChangeLabel(gitlab.merge_requests[0],[],["old"])
+        # example to work with labels
+        # gitlab.SetLabel(gitlab.merge_requests[0],["new","new2"]) # labels will become this exact list
+        # gitlab.ChangeLabel(gitlab.merge_requests[0],["new"]) # add, remove
+        # gitlab.ChangeLabel(gitlab.merge_requests[0],[],["old"])
 
-    gitlab.GetMergeRequests()
-    gitlab.merge_requests[0].Print()
+        #gitlab.GetMergeRequests()
+        gitlab.merge_requests[0].Print()
 
+    print ("------------ ISSUES ----------------")
+    gitlab.GetIssues()
+    gitlab.GetLabelEvents() ## to get issues label events
+    if len(gitlab.issues)>0:
+        gitlab.issues[0].Print()
     # create a repository in a existing namespace
     # testrepo="amarini-testgroup/subgroup/Repo3"
     # gitlab.CreateProject(testrepo)
