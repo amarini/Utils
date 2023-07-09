@@ -152,7 +152,7 @@ class Epic(Base):
         self.title=req["title"]
         self.id=req["id"]
         self.iid=req["iid"]
-        self.group=req["group"]
+        if 'group' in req: self.group=req["group"]
     def Print(self):
         Base.Print(self)
 
