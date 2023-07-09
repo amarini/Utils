@@ -246,10 +246,10 @@ class Issue(Base):
         self.labels = req["labels"]
         self.iid = req["iid"]
         self.id = req["id"]
-        if 'epic' in req:
+        if 'epic' in req and req['epic'] != None:
             self.epic =Epic()
             self.epic.ParseRequest(req["epic"])
-        if 'milestone' in req:
+        if 'milestone' in req and req['milestone'] != None:
             self.milestone = MileStone()
             self.milestone.ParseRequest(req["milestone"])
         return self
@@ -522,7 +522,7 @@ class GitLabHandler:
         for req in r.json():
             myMR = MergeReq()
             myMR.ParseRequest(req)
-            myMR.Print()
+            #myMR.Print()
             self.merge_requests.append(myMR)
 
     def GetPipelines(self):
@@ -658,7 +658,7 @@ class GitLabHandler:
         for req in r.json():
             myIssue = Issue()
             myIssue.ParseRequest(req)
-            myIssue.Print()
+            #myIssue.Print()
             self.issues.append(myIssue)
         return self
 
